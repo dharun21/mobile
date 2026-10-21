@@ -1,0 +1,97 @@
+# ZengenAI Mobile
+
+React Native + Expo + TypeScript app for iOS, Android, and browser preview. NativeWind 4.2.7 provides Tailwind CSS 3.4 utility classes. It lives beside `frontend/` and `backend/` and connects to the existing FastAPI service.
+
+## Requirements
+
+- Node.js 22.13 or newer
+- Android Studio and Android SDK for an Android emulator, or Expo Go on a physical phone
+- macOS with Xcode to build/run the iOS simulator
+
+## Run in VS Code
+
+Open the `mobile/` folder in VS Code. In its terminal:
+
+```powershell
+npm install
+npx expo install --fix
+$env:EXPO_PUBLIC_API_BASE_URL="http://10.0.2.2:8000/api/v1"
+npx expo start
+```
+
+Start the FastAPI backend in another VS Code terminal first. For native development:
+
+```powershell
+cd ..\backend
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Press `a` in the Expo terminal to open an Android emulator, or scan the QR code with Expo Go. For a physical phone, replace `10.0.2.2` with your computer's LAN IP. The backend command above binds to `0.0.0.0` so the phone can reach it. For a deployed service, set the URL to an HTTPS API root ending in `/api/v1`.
+
+`10.0.2.2` is the Android emulator's host alias. If using an iOS simulator, set `EXPO_PUBLIC_API_BASE_URL` to `http://127.0.0.1:8000/api/v1`. iOS simulator and native iOS builds require macOS/Xcode.
+
+## Run in a browser
+
+In the backend terminal, stop the server if it is already running, then restart it with Expo's local browser origins allowed:
+
+```powershell
+cd ..\backend
+$env:ZENGENAI_ALLOWED_ORIGINS="http://localhost:5173,http://127.0.0.1:5173,http://localhost:8081,http://127.0.0.1:8081"
+.\.venv\Scripts\python.exe -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+In a separate terminal opened in `mobile/`:
+
+```powershell
+$env:EXPO_PUBLIC_API_BASE_URL="http://127.0.0.1:8000/api/v1"
+npm run web
+```
+
+Expo opens the app at `http://localhost:8081`. If it selects another port, add that port's `http://localhost:<port>` and `http://127.0.0.1:<port>` origins to `ZENGENAI_ALLOWED_ORIGINS`, then restart the backend. Browser preview stores the sign-in session in browser storage; iOS and Android continue to use device secure storage.
+
+## VS Code setup
+
+Install the Expo Tools extension if desired, then choose **TypeScript React Native** language mode for `.tsx` files. Run `npm run typecheck` to check the TypeScript app. Expo Go is the quickest way to preview; use an Android emulator or development build for native device debugging.
+
+## Structure
+
+```text
+App.tsx                     Authenticated app shell and tab navigation
+src/
+  components/               Reusable NativeWind UI and tab bar
+  config.ts                 API base URL and design tokens
+  context/                  Auth and in-app navigation state
+  features/
+    access/                 Admin specialist access management
+    assistant/              Personal assistant tasks, reminders, notes
+    auth/                   Login, registration, password recovery
+    chat/                   Finance AI chat and saved conversations
+    finance/                Workspace, insights, records, statements, uploads
+    home/                   Workspace dashboard and enabled AI team
+    notifications/          In-app notification center
+    pricing/                Specialist and workforce plan preview
+    profile/                Profile, preferences, and sign out
+  services/api.ts           Axios client, bearer token and API errors
+  types/api.ts              Typed backend data models
+app.json                    Expo identifiers, scheme, and native plugins
+global.css                  Tailwind directives and NativeWind utilities
+tailwind.config.js           Tailwind colors and source scanning
+metro.config.js             NativeWind Metro integration
+```
+
+JWTs use Expo SecureStore on iOS and Android, and browser storage for web previews. Assistant notes/tasks/reminders use local AsyncStorage and do not sync with the web version because the backend has no matching persistence API. HR and Sales remain early-access areas. Pricing is a launch preview; the backend does not yet implement purchase verification or checkout. Finance automatic extraction currently supports text-based PDF invoices; the API accepts other documented file types but does not automatically process them yet.
+
+## Useful commands
+
+```powershell
+npm run typecheck
+npx expo start --clear
+npx expo-doctor
+```
+
+Set the production API URL before starting Expo:
+
+```powershell
+$env:EXPO_PUBLIC_API_BASE_URL="https://api.example.com/api/v1"
+npx expo start
+```

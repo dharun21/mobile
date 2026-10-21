@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "ZengenAI",
+    "slug": "zengenai-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "zengenai",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ai.zengen.workspace"
+    },
+    "android": {
+      "package": "ai.zengen.workspace",
+      "edgeToEdgeEnabled": true
+    },
+    "plugins": [
+      "expo-secure-store",
+      "expo-document-picker",
+      "expo-status-bar",
+      "expo-sharing"
+    ]
+  }
+}
