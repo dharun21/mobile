@@ -1,28 +1,76 @@
-import React from 'react';
-import { Pressable, Text, View } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { Animated, Platform, Pressable, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import type { MainTab } from '../config';
-import { colors } from '../config';
+import type { MainTab, PinnedSpecialist } from '../config';
+import { colors, fonts } from '../config';
+import { useReduceMotion } from './Motion';
 
-const destinations: { key: MainTab; title: string; icon: keyof typeof Ionicons.glyphMap }[] = [
-  { key: 'home', title: 'Home', icon: 'grid-outline' },
-  { key: 'finance', title: 'Finance', icon: 'stats-chart-outline' },
-  { key: 'chat', title: 'AI Chat', icon: 'sparkles-outline' },
-  { key: 'assistant', title: 'Assistant', icon: 'heart-outline' },
-  { key: 'profile', title: 'Profile', icon: 'person-outline' },
+type PinnedTab = PinnedSpecialist;
+type Destination = { key: MainTab; title: string; icon: keyof typeof Ionicons.glyphMap; activeIcon: keyof typeof Ionicons.glyphMap };
+const fixedDestinations: Destination[] = [
+  { key: 'home', title: 'Home', icon: 'grid-outline', activeIcon: 'grid' },
+  { key: 'ais', title: "AI's", icon: 'apps-outline', activeIcon: 'apps' },
+  { key: 'profile', title: 'Profile', icon: 'person-outline', activeIcon: 'person' },
 ];
+const chatDestination = { key: 'chat' as const, title: 'AI Chat', icon: 'sparkles-outline' as const, activeIcon: 'sparkles' as const };
+const pinnedDestination: Record<PinnedTab, { key: PinnedTab; title: string; icon: keyof typeof Ionicons.glyphMap; activeIcon: keyof typeof Ionicons.glyphMap }> = {
+  finance: { key: 'finance', title: 'Finance', icon: 'stats-chart-outline', activeIcon: 'stats-chart' },
+  assistant: { key: 'assistant', title: 'Assist', icon: 'heart-outline', activeIcon: 'heart' },
+};
 
-export function TabBar({ active, onChange }: { active: MainTab; onChange: (tab: MainTab) => void }) {
-  return <SafeAreaView edges={['bottom']} className="border-t border-line bg-panel">
-    <View className="h-[62px] flex-row items-center justify-around px-1">
-      {destinations.map((item) => {
-        const selected = active === item.key;
-        return <Pressable key={item.key} onPress={() => onChange(item.key)} className="min-w-[62px] items-center gap-1 px-2 py-2">
-          <View className={`h-7 min-w-10 items-center justify-center rounded-full px-3 ${selected ? 'bg-lilac/15' : ''}`}><Ionicons name={selected ? item.icon.replace('-outline', '') as keyof typeof Ionicons.glyphMap : item.icon} size={19} color={selected ? colors.lilac : colors.muted} /></View>
-          <Text className={`text-[9px] ${selected ? 'font-semibold text-lilac-bright' : 'text-muted'}`}>{item.title}</Text>
-        </Pressable>;
-      })}
+export function TabBar({ active, pinned, specialists, onChange }: { active: MainTab; pinned: PinnedTab | null; specialists: string[]; onChange: (tab: MainTab) => void }) {
+  const { width: screenWidth } = useWindowDimensions();
+  const shortcut = pinned && specialists.includes(pinned === 'assistant' ? 'personal_assistant' : 'finance_analyst')
+    ? [pinnedDestination[pinned]] : [];
+  const allowed = [fixedDestinations[0], fixedDestinations[1], ...(specialists.length ? [chatDestination] : []), ...shortcut, fixedDestinations[2]];
+  const tabWidth = Math.min(78, Math.max(52, (screenWidth - 44) / allowed.length));
+
+  return <SafeAreaView edges={['bottom']} className="bg-canvas px-4 pt-1">
+    <View accessibilityRole="tablist" style={{ width: allowed.length * tabWidth + 12 }} className="h-[72px] flex-row items-center self-start rounded-[26px] border border-line bg-panel px-1.5">
+      {allowed.map((item) => <TabItem key={item.key} item={item} width={tabWidth} selected={active === item.key} onPress={() => onChange(item.key)} />)}
     </View>
   </SafeAreaView>;
+}
+
+function TabItem({ item, width, selected, onPress }: { item: Destination; width: number; selected: boolean; onPress: () => void }) {
+  const progress = useRef(new Animated.Value(selected ? 1 : 0)).current;
+  const reducedMotion = useReduceMotion();
+
+  useEffect(() => {
+    const animation = Animated.spring(progress, {
+      toValue: selected ? 1 : 0,
+      stiffness: 310,
+      damping: 26,
+      mass: 0.8,
+      useNativeDriver: Platform.OS !== 'web',
+    });
+    if (reducedMotion) progress.setValue(selected ? 1 : 0);
+    else animation.start();
+    return () => animation.stop();
+  }, [progress, reducedMotion, selected]);
+
+  const pillOpacity = progress.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
+  const iconScale = progress.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] });
+  const iconTranslate = progress.interpolate({ inputRange: [0, 1], outputRange: [0, -1] });
+
+  return <Pressable
+    accessibilityRole="tab"
+    accessibilityLabel={item.title}
+    accessibilityState={{ selected }}
+    onPress={onPress}
+    style={{ width }}
+    className="h-full flex-none items-center justify-center px-0.5 py-2 active:opacity-80"
+  >
+    <View className="h-10 w-[58px] items-center justify-center">
+      <Animated.View pointerEvents="none" className="absolute h-9 w-[54px] overflow-hidden rounded-[18px]" style={{ opacity: pillOpacity }}>
+        <LinearGradient colors={['#C4B5FD35', '#8B75C914']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1, borderWidth: 1, borderColor: '#C4B5FD30', borderRadius: 18 }} />
+      </Animated.View>
+      <Animated.View style={{ transform: [{ scale: iconScale }, { translateY: iconTranslate }] }}>
+        <Ionicons name={selected ? item.activeIcon : item.icon} size={20} color={selected ? colors.lilac : colors.muted} />
+      </Animated.View>
+    </View>
+    <Text style={{ fontFamily: selected ? fonts.semibold : fonts.medium, fontSize: width < 62 ? 9 : 10, lineHeight: 15, letterSpacing: 0, color: selected ? colors.text : colors.muted, textAlign: 'center' }}>{item.title}</Text>
+  </Pressable>;
 }

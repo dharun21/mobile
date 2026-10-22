@@ -2,6 +2,10 @@
 
 React Native + Expo + TypeScript app for iOS, Android, and browser preview. NativeWind 4.2.7 provides Tailwind CSS 3.4 utility classes. It lives beside `frontend/` and `backend/` and connects to the existing FastAPI service.
 
+The mobile theme follows the ZengenAI web app: the **Great Vibes** wordmark, **DM Sans** body text, **Manrope** headings, and its dark violet palette. The fonts ship with the app and work offline. The login, home, finance, chat, assistant, profile, pricing, and admin screens share the same visual system.
+
+Text entry and bottom sheets resize and keep the focused field visible above the keyboard. Android builds use the `resize` software keyboard layout mode; Expo Go users can run `npx expo start --clear` to reload the latest UI.
+
 ## Requirements
 
 - Node.js 22.13 or newer
@@ -58,13 +62,13 @@ Install the Expo Tools extension if desired, then choose **TypeScript React Nati
 ```text
 App.tsx                     Authenticated app shell and tab navigation
 src/
-  components/               Reusable NativeWind UI and tab bar
+  components/               Branded UI, keyboard-aware forms and sheets, animated tab bar
   config.ts                 API base URL and design tokens
   context/                  Auth and in-app navigation state
   features/
     access/                 Admin specialist access management
     assistant/              Personal assistant tasks, reminders, notes
-    auth/                   Login, registration, password recovery
+    auth/                   Branded login, registration, password recovery
     chat/                   Finance AI chat and saved conversations
     finance/                Workspace, insights, records, statements, uploads
     home/                   Workspace dashboard and enabled AI team
@@ -80,6 +84,18 @@ metro.config.js             NativeWind Metro integration
 ```
 
 JWTs use Expo SecureStore on iOS and Android, and browser storage for web previews. Assistant notes/tasks/reminders use local AsyncStorage and do not sync with the web version because the backend has no matching persistence API. HR and Sales remain early-access areas. Pricing is a launch preview; the backend does not yet implement purchase verification or checkout. Finance automatic extraction currently supports text-based PDF invoices; the API accepts other documented file types but does not automatically process them yet.
+
+General chat displays source links below answers that use live weather, exchange-rate,
+or place information. These lookups run on the backend, so the backend computer or
+server needs internet access. Other general responses still use the configured local
+Ollama model.
+
+For temporary chat testing, open **AI Chat → Chats → Testing export**. **Current chat**
+exports the open saved conversation; **All chats** exports every saved conversation
+for the signed-in account. The JSON file includes the full API message history,
+timestamps, roles, and answer metadata. The browser downloads the file; iOS and
+Android open the system share sheet. Remove the marked controls in `ChatScreen.tsx`
+and `src/services/chatExport.ts` when testing is finished.
 
 ## Useful commands
 

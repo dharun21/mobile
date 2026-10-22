@@ -12,6 +12,9 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@expo-google-fonts/dm-sans": "^0.4.2",
+    "@expo-google-fonts/great-vibes": "^0.4.1",
+    "@expo-google-fonts/manrope": "^0.4.2",
     "@expo/metro-runtime": "~57.0.17",
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "2.2.0",
@@ -19,6 +22,7 @@
     "expo": "~57.0.22",
     "expo-document-picker": "~57.0.0",
     "expo-file-system": "~57.0.7",
+    "expo-font": "~57.0.4",
     "expo-linear-gradient": "~57.0.0",
     "expo-secure-store": "~57.0.0",
     "expo-sharing": "~57.0.24",
@@ -28,6 +32,7 @@
     "react-dom": "19.2.3",
     "react-native": "0.86.3",
     "react-native-css-interop": "^0.2.7",
+    "react-native-keyboard-controller": "^1.21.9",
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-web": "^0.21.2",

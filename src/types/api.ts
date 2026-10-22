@@ -83,15 +83,25 @@ export interface FinanceOverview {
 export interface ChatConversation {
   id: string;
   title: string;
+  domain: ChatDomain;
   updated_at: string;
 }
+
+export type ChatDomain = 'general' | 'finance_analyst' | 'personal_assistant' | 'hr_executive' | 'sales_analyst';
 
 export interface ChatMessage {
   id: string;
   conversation_id?: string;
   role: 'user' | 'assistant';
   content: string;
+  created_at?: string;
+  message_type?: string;
   suggested_questions?: string[];
+  metadata?: {
+    engine?: string;
+    sources?: { title: string; url: string }[];
+    [key: string]: unknown;
+  } | null;
 }
 
 export interface AppNotification {

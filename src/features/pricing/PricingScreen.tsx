@@ -1,27 +1,106 @@
 import React, { useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BrandWordmark } from '../../components/BrandWordmark';
 import { Card, Copy, Eyebrow, Heading, SectionTitle } from '../../components/ui';
+import { colors, fonts } from '../../config';
+import { useTheme } from '../../context/ThemeContext';
 
 const plans = [
-  { name: 'Spark', tagline: 'Your AI workforce begins here', price: 35, count: 'Any 2 AI employees', description: 'Best for individuals and first-time AI workforce users.', info: '1 user · 1 device · Medium usage limits', features: ['Choose any 2 specialist AI employees', 'Personal AI Assistant included'] },
-  { name: 'Nexus', tagline: 'Your connected AI team', price: 65, count: 'Any 4 AI employees', description: 'Best for growing businesses that need multiple specialists.', info: '2 users · 2 devices · Medium usage limits', features: ['Choose any 4 specialist AI employees', 'Personal AI Assistant included'], popular: true },
-  { name: 'Infinity', tagline: 'Your AI workforce, expanded', price: 250, count: 'Choose any 6 AI employees', description: 'For businesses ready to build a broader AI-powered operation.', info: '3 users · 3 devices · High usage limits', features: ['Choose any 6 specialist AI employees', 'Personal AI Assistant included', 'Early access trials for upcoming specialists'] },
+  { name: 'Spark', tagline: 'A bright beginning.', price: 35, count: 'Any 2 AI specialists', description: 'For individuals building their first AI team.', info: '1 user · 1 device · Medium usage limits', features: ['Choose any 2 specialist AI employees', 'Personal AI Assistant included'], icon: 'flash-outline' as const },
+  { name: 'Nexus', tagline: 'Better, together.', price: 65, count: 'Any 4 AI specialists', description: 'For growing businesses bringing their work together.', info: '2 users · 2 devices · Medium usage limits', features: ['Choose any 4 specialist AI employees', 'Personal AI Assistant included'], popular: true, icon: 'people-outline' as const },
+  { name: 'Infinity', tagline: 'Room for every possibility.', price: 250, count: 'Any 6 AI specialists', description: 'For businesses ready for a broader AI workforce.', info: '3 users · 3 devices · High usage limits', features: ['Choose any 6 specialist AI employees', 'Personal AI Assistant included', 'Early access trials for upcoming specialists'], icon: 'infinite-outline' as const },
 ];
 
 export function PricingScreen() {
+  const { isDark } = useTheme();
   const [currency, setCurrency] = useState<'USD' | 'INR'>('USD');
-  const money = (usd: number) => new Intl.NumberFormat(currency === 'INR' ? 'en-IN' : 'en-US', { style: 'currency', currency, maximumFractionDigits: currency === 'INR' ? 0 : 2 }).format(currency === 'INR' ? usd * 95.11 : usd);
-  return <ScrollView className="flex-1" contentContainerClassName="px-5 pb-10 pt-2" showsVerticalScrollIndicator={false}>
-    <Eyebrow>Single specialist or full AI team</Eyebrow><Heading className="mt-2">Choose how to build your AI workforce.</Heading><Copy className="mt-2">Your Personal AI Assistant is included with every ZengenAI plan.</Copy>
-    <View className="mt-5 flex-row items-center justify-between"><Text className="text-[12px] text-muted">Display currency</Text><View className="flex-row rounded-xl border border-line bg-panel p-1">{(['USD', 'INR'] as const).map((item) => <Pressable key={item} onPress={() => setCurrency(item)} className={`rounded-lg px-3 py-2 ${currency === item ? 'bg-raised' : ''}`}><Text className={`text-[11px] font-semibold ${currency === item ? 'text-lilac-bright' : 'text-muted'}`}>{item}</Text></Pressable>)}</View></View>
+  const money = (usd: number) => new Intl.NumberFormat(currency === 'INR' ? 'en-IN' : 'en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(currency === 'INR' ? usd * 95.11 : usd);
 
-    <Card className="mt-5 p-4"><Eyebrow>Buy a single AI employee</Eyebrow><SectionTitle title="One specialist. One subscription." /><Copy className="text-[11px]">For a small business: choose one specialist AI, with your Personal Assistant included. Corporate pricing is tailored to your requirements.</Copy><View className="mt-3 flex-row items-end"><Text className="text-[27px] font-bold text-white">{money(19)}</Text><Text className="mb-1 ml-1 text-[10px] text-muted">/ AI / month</Text></View><Perk text="One selected specialist" /><Perk text="Personal Assistant included" /><Perk text="Corporate pricing available" /></Card>
+  return (
+    <ScrollView className="flex-1" contentContainerClassName="px-5 pb-10 pt-3" showsVerticalScrollIndicator={false}>
+      <Eyebrow>Made for the way you work</Eyebrow>
+      <View className="mt-5"><BrandWordmark size={47} /></View>
+      <Heading className="mt-5 text-[31px] leading-[39px]">Your team.{'\n'}Your possibilities.</Heading>
+      <Copy className="mt-3">One specialist or a whole AI workforce. Your Personal Assistant is included with every plan.</Copy>
 
-    <SectionTitle title="Zengen AI workforce plans" /><Copy className="mb-3 text-[11px]">Separate multi-specialist packages. Each plan includes the number of specialists listed below.</Copy>
-    {plans.map((plan) => <Card key={plan.name} className={`mb-3 p-4 ${plan.popular ? 'border-lilac/50 bg-raised' : ''}`}><View className="flex-row items-start justify-between"><View className="flex-1"><Eyebrow>ZENGEN AI WORKFORCE</Eyebrow><Text className="mt-2 text-[23px] font-bold text-white">{plan.name}</Text><Text className="mt-1 text-[11px] text-lilac-bright">{plan.tagline}</Text></View>{plan.popular ? <Text className="rounded-full bg-lilac/15 px-2.5 py-1 text-[9px] font-bold tracking-wider text-lilac-bright">POPULAR</Text> : null}</View><View className="mt-4 flex-row items-end"><Text className="text-[27px] font-bold text-white">{money(plan.price)}</Text><Text className="mb-1 ml-1 text-[10px] text-muted">/ package / month</Text></View><Text className="mt-3 text-[13px] font-semibold text-white">{plan.count}</Text><Copy className="mt-1 text-[11px]">{plan.description}</Copy><View className="my-3 h-px bg-line" />{plan.features.map((feature) => <Perk key={feature} text={feature} />)}<Copy className="mt-3 text-[10px]">{plan.info}</Copy><Text className="mt-3 text-[10px] font-medium text-lilac-bright">Plan preview · Specialist selection and checkout are coming soon.</Text></Card>)}
+      <View className="mt-6 flex-row items-center justify-between gap-3">
+        <View className="flex-1">
+          <Text className="font-semibold text-[14px] text-white">Monthly plans</Text>
+          <Text className="mt-1 font-sans text-[12px] text-muted">Launch preview</Text>
+        </View>
+        <View accessibilityLabel="Display currency" className="flex-row rounded-2xl border border-line bg-panel p-1">
+          {(['USD', 'INR'] as const).map((item) => (
+            <Pressable key={item} accessibilityRole="button" accessibilityLabel={'Show prices in ' + item} accessibilityState={{ selected: currency === item }} onPress={() => setCurrency(item)} className={'min-h-11 min-w-14 items-center justify-center rounded-xl px-3 ' + (currency === item ? 'bg-lilac' : '')}>
+              <Text className={'font-semibold text-[13px] ' + (currency === item ? 'text-ink' : 'text-muted')}>{item}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
 
-    <Copy className="text-[10px]">Finance Analyst is available now. HR Executive and Sales Analyst are coming soon. INR prices are approximate conversions at ₹95.11 per USD. Purchase verification and checkout are not implemented; specialist access is managed by an administrator.</Copy>
-  </ScrollView>;
+      <Card className="mt-5 p-5">
+        <View className="flex-row items-center">
+          <View className="h-11 w-11 items-center justify-center rounded-2xl bg-lilac/10"><Ionicons name="sparkles-outline" size={23} color={colors.lilac} /></View>
+          <View className="ml-3 flex-1"><Text className="font-semibold text-[17px] text-white">One perfect fit</Text><Text className="mt-1 font-sans text-[13px] text-muted">A single AI specialist</Text></View>
+        </View>
+        <View className="mt-5 flex-row flex-wrap items-baseline gap-x-2">
+          <Text className="font-display text-[36px] tracking-[-1px] text-white">{money(19)}</Text>
+          <Text className="font-sans text-[13px] text-muted">/ specialist / month</Text>
+        </View>
+        <Copy className="mt-2">Start with one specialist for your small business, plus your Personal Assistant.</Copy>
+        <View className="my-5 h-px bg-line" />
+        <Perk text="One selected specialist" />
+        <Perk text="Personal Assistant included" />
+        <Perk text="Tailored corporate pricing available" />
+      </Card>
+
+      <SectionTitle title="Build your AI team" />
+      <Copy className="mb-5">A little more support, at every stage.</Copy>
+      {plans.map((plan) => (
+        <View key={plan.name} className={'mb-4 overflow-hidden rounded-[26px] border ' + (plan.popular ? 'border-lilac/40' : 'border-line')}>
+        <LinearGradient
+          colors={isDark ? (plan.popular ? ['#2b223c', '#19151f'] : ['#17141e', '#14131c']) : (plan.popular ? ['#F0EAFB', '#E8E1F3'] : ['#FFFFFF', '#F6F3FA'])}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={{ padding: 24 }}
+        >
+          <View className="flex-row items-center justify-between">
+            <View className="h-11 w-11 items-center justify-center rounded-2xl border border-lilac/15 bg-lilac/10"><Ionicons name={plan.icon} size={23} color={colors.lilac} /></View>
+            {plan.popular ? <View className="rounded-full border border-lilac/20 bg-lilac/10 px-3 py-1.5"><Text className="font-semibold text-[11px] text-lilac">Most popular</Text></View> : null}
+          </View>
+          <Text style={{ marginTop: 17, fontFamily: fonts.brand, fontSize: 43, lineHeight: 52, color: isDark ? '#F5F3FF' : colors.text }}>{plan.name}</Text>
+          <Text className="mt-1 font-medium text-[14px] text-lilac">{plan.tagline}</Text>
+          <View className="mt-5 flex-row flex-wrap items-baseline gap-x-2">
+            <Text className="font-display text-[36px] tracking-[-1px] text-white">{money(plan.price)}</Text>
+            <Text className="font-sans text-[13px] text-muted">/ month</Text>
+          </View>
+          <Text className="mt-3 font-semibold text-[16px] text-white">{plan.count}</Text>
+          <Copy className="mt-2">{plan.description}</Copy>
+          <View className="my-5 h-px bg-line" />
+          {plan.features.map((feature) => <Perk key={feature} text={feature} />)}
+          <View className="mt-5 rounded-2xl bg-canvas/70 px-4 py-3"><Text className="font-sans text-[12px] leading-[19px] text-muted">{plan.info}</Text></View>
+        </LinearGradient>
+        </View>
+      ))}
+
+      <View className="mt-1 flex-row items-start rounded-[22px] border border-lilac/15 bg-lilac/5 p-5">
+        <Ionicons name="information-circle-outline" size={22} color={colors.lilac} />
+        <View className="ml-3 flex-1">
+          <Text className="font-semibold text-[14px] text-lilac-bright">A preview of what's ahead</Text>
+          <Text className="mt-2 font-sans text-[13px] leading-[21px] text-muted">Specialist selection and checkout are coming soon. For now, your workspace administrator manages access.</Text>
+        </View>
+      </View>
+      <Text className="mt-5 px-1 font-sans text-[12px] leading-[20px] text-muted">Finance Analyst is available now. HR Executive and Sales Analyst are coming soon. INR prices are approximate conversions at ₹95.11 per USD; local billing may vary.</Text>
+    </ScrollView>
+  );
 }
 
-function Perk({ text }: { text: string }) { return <View className="mt-2 flex-row items-start"><Text className="mr-2 text-[13px] text-mint">✓</Text><Text className="flex-1 text-[11px] leading-[17px] text-white">{text}</Text></View>; }
+function Perk({ text }: { text: string }) {
+  return (
+    <View className="mb-3 flex-row items-start">
+      <Ionicons name="checkmark-circle-outline" size={18} color={colors.lilac} style={{ marginTop: 1 }} />
+      <Text className="ml-3 flex-1 font-sans text-[14px] leading-[21px] text-body">{text}</Text>
+    </View>
+  );
+}

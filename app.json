@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "ZengenAI",
+    "name": "Zengen AI",
     "slug": "zengenai-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -13,7 +13,8 @@
     },
     "android": {
       "package": "ai.zengen.workspace",
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "softwareKeyboardLayoutMode": "resize"
     },
     "plugins": [
       "expo-secure-store",
