@@ -12,6 +12,12 @@ Text entry and bottom sheets resize and keep the focused field visible above the
 - Android Studio and Android SDK for an Android emulator, or Expo Go on a physical phone
 - macOS with Xcode to build/run the iOS simulator
 
+## Finance reminders
+
+The app asks for notification permission and schedules local device reminders from the signed-in user's finance schedule. High priority reminders can be read aloud after opening the notification screen. The notification screen also lets users snooze an event or add it to their device calendar through the system calendar editor. Device calendar import is a user action, so changes to a bill do not silently edit events already copied into another calendar.
+
+Remote push can also be enabled by configuring an Expo/EAS project for the app and building a development or production app with push credentials. Expo Go does not support remote push on current Android SDKs; local scheduled notifications are the fallback. The backend must be running to create in-app notifications and send remote push. If a reminder is changed on the web while the mobile app is offline, its local schedule is updated when the app reconnects. The backend sends generic push text to keep financial amounts off the lock screen.
+
 ## Run in VS Code
 
 Open the `mobile/` folder in VS Code. In its terminal:

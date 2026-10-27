@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { api, secureSession, setUnauthorizedHandler } from '../services/api';
 import { sessionStorage } from '../services/sessionStorage';
 import type { ApiUser, AuthResponse } from '../types/api';
+import { unregisterFinancePush } from '../services/pushNotifications';
 
 interface AuthState {
   user: ApiUser | null;
@@ -19,6 +20,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const signOut = useCallback(async () => {
+    await unregisterFinancePush().catch(() => undefined);
     await Promise.all([
       sessionStorage.deleteItem(secureSession.tokenKey),
       sessionStorage.deleteItem(secureSession.userKey),

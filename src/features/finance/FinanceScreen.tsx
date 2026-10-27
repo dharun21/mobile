@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, RefreshControl, ScrollView, Share, Text, TextInput, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -14,13 +14,19 @@ import { KeyboardScrollView } from '../../components/KeyboardLayout';
 import { BrandWordmark } from '../../components/BrandWordmark';
 import { API_BASE_URL, colors } from '../../config';
 import { useTheme } from '../../context/ThemeContext';
-import type { FinanceDocument, FinanceOverview, FinanceRecord, FinanceStatement, FinanceWorkspace } from '../../types/api';
+import type { FinanceDocument, FinanceOverview, FinanceRecord, FinanceStatement, FinanceWorkspace, PayrollOverview, PayrollPayslip } from '../../types/api';
+import { BusinessFocus } from './BusinessFocus';
+import { FinanceMobileAttention } from './FinanceMobileAttention';
+import { FinanceMobileImports } from './FinanceMobileImports';
+import { syncLocalFinanceReminders } from '../../services/pushNotifications';
+import { syncDeviceCalendar } from '../../services/deviceCalendar';
+import { useAuth } from '../../context/AuthContext';
 
-type Section = 'Overview' | 'Files' | 'Records' | 'Statements' | 'Insights';
-type RecordFilter = 'All' | 'Invoices' | 'Bills' | 'Needs review' | 'Unpaid' | 'Paid';
+type Section = 'Overview' | 'Attention' | 'Files' | 'Imports' | 'Records' | 'Statements' | 'Insights';
+type RecordFilter = 'All' | 'Invoices' | 'Bills' | 'Needs review' | 'Open invoices' | 'Unpaid' | 'Partial' | 'Paid';
 type IconName = keyof typeof Ionicons.glyphMap;
 type FinanceProfile = {
-  business_name: string; industry: string; country: string; currency: string; size: string;
+  business_name: string; business_type: 'Retail' | 'Corporate' | ''; industry: string; country: string; currency: string; size: string;
   financial_year: string; workflows: string[]; sources: string[]; payment_terms: string;
   approval_limit: string; reviewer: string; categories: string;
 };
@@ -28,9 +34,12 @@ type RecordDraft = {
   record_type: 'invoice' | 'expense'; counterparty: string; reference_number: string;
   issue_date: string; due_date: string; currency: string; subtotal: string; tax_total: string; total_amount: string;
 };
+type FinanceReminder = { source_id: string; scheduled_at: string; priority: 'low' | 'high'; calendar_enabled: boolean };
 const tabs: { id: Section; label: string; icon: IconName }[] = [
   { id: 'Overview', label: 'Overview', icon: 'grid-outline' },
+  { id: 'Attention', label: 'Needs attention', icon: 'notifications-outline' },
   { id: 'Files', label: 'Documents', icon: 'documents-outline' },
+  { id: 'Imports', label: 'Imports', icon: 'cloud-download-outline' },
   { id: 'Records', label: 'Records', icon: 'receipt-outline' },
   { id: 'Statements', label: 'Statements', icon: 'business-outline' },
   { id: 'Insights', label: 'Insights', icon: 'sparkles-outline' },
@@ -51,13 +60,17 @@ const sources = [
 ];
 
 export function FinanceScreen() {
+  const { user } = useAuth();
   const { isDark } = useTheme();
   const [section, setSection] = useState<Section>('Overview');
   const [workspace, setWorkspace] = useState<FinanceWorkspace | null>(null);
   const [overview, setOverview] = useState<FinanceOverview | null>(null);
   const [records, setRecords] = useState<FinanceRecord[]>([]);
   const [documents, setDocuments] = useState<FinanceDocument[]>([]);
+  const [selectedImportSource, setSelectedImportSource] = useState<string | null>(null);
   const [statements, setStatements] = useState<FinanceStatement[]>([]);
+  const [payrollSummary, setPayrollSummary] = useState<PayrollOverview | null>(null);
+  const [recentPayslips, setRecentPayslips] = useState<PayrollPayslip[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
@@ -71,26 +84,39 @@ export function FinanceScreen() {
   const [search, setSearch] = useState('');
   const [detailId, setDetailId] = useState<string | null>(null);
   const [reminderTarget, setReminderTarget] = useState<FinanceRecord | null>(null);
+  const [followUpTarget, setFollowUpTarget] = useState<FinanceRecord | null>(null);
+  const [followUpDraft, setFollowUpDraft] = useState('');
   const [reminderDraft, setReminderDraft] = useState('');
+  const [reminderTime, setReminderTime] = useState('09:00');
+  const [reminderPriority, setReminderPriority] = useState<'low' | 'high'>('low');
+  const [reminderCalendar, setReminderCalendar] = useState(true);
+  const [reminders, setReminders] = useState<FinanceReminder[]>([]);
   const [savingReminder, setSavingReminder] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [paymentId, setPaymentId] = useState<string | null>(null);
+  const [paymentTarget, setPaymentTarget] = useState<FinanceRecord | null>(null);
+  const [paymentDraft, setPaymentDraft] = useState('');
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     setError('');
     try {
-      const [w, d, r, o, s] = await Promise.all([
+      const [w, d, r, o, s, payroll, slips, reminderRows] = await Promise.all([
         api.get<FinanceWorkspace>('/finance/workspace'),
         api.get<FinanceDocument[]>('/finance/documents'),
         api.get<FinanceRecord[]>('/finance/records'),
         api.get<FinanceOverview>('/intelligence/overview'),
         api.get<FinanceStatement[]>('/finance/statements'),
+        api.get<PayrollOverview>('/finance/payroll/overview').catch(() => null),
+        api.get<PayrollPayslip[]>('/finance/payroll/payslips').catch(() => null),
+        api.get<FinanceReminder[]>('/reminders').catch(() => null),
       ]);
       setWorkspace(w.data); setDocuments(d.data); setRecords(r.data); setOverview(o.data); setStatements(s.data); setSetupRequired(false);
+      setPayrollSummary(payroll?.data ?? null); setRecentPayslips((slips?.data ?? []).filter((slip) => slip.status !== 'draft').slice(0, 2));
+      setReminders(reminderRows?.data ?? []);
     } catch (e) {
       const isMissing = (e as { response?: { status?: number } })?.response?.status === 404;
-      if (isMissing) setSetupRequired(true);
+      if (isMissing) { setSetupRequired(true); setPayrollSummary(null); setRecentPayslips([]); }
       else setError(errorMessage(e));
     } finally { setLoading(false); setRefreshing(false); }
   }, []);
@@ -100,7 +126,7 @@ export function FinanceScreen() {
   async function saveWorkspace(profile: FinanceProfile, files: DocumentPicker.DocumentPickerAsset[]) {
     try {
       const { data } = await api.put<FinanceWorkspace>('/finance/workspace', {
-        business_name: profile.business_name.trim(), industry: profile.industry.trim() || null,
+        business_name: profile.business_name.trim(), business_type: profile.business_type || null, industry: profile.industry.trim() || null,
         country: profile.country.trim() || null, currency: profile.currency.trim().toUpperCase(),
         size: profile.size, financial_year: profile.financial_year, workflows: profile.workflows,
         sources: profile.sources, payment_terms: profile.payment_terms,
@@ -142,6 +168,13 @@ export function FinanceScreen() {
           const warnings = processed.data?.warnings as string[] | undefined;
           if (warnings?.length) Alert.alert('Document uploaded', warnings[0]);
         } catch (e) { Alert.alert('Uploaded for review', errorMessage(e, 'Automatic processing could not read this PDF.')); }
+      } else if (/\.(csv|xlsx)$/i.test(file.name)) {
+        try {
+          const prepared = await api.post<{ id: string; status: string }>(`/finance/imports/files/${data.id}`);
+          setSelectedImportSource(prepared.data.id);
+          setSection('Imports');
+          Alert.alert('Spreadsheet ready', prepared.data.status === 'ready' ? 'A saved mapping was reused. Preview rows before sending them to review.' : 'Map its columns and preview rows before sending them to review.');
+        } catch (e) { Alert.alert('File uploaded', errorMessage(e, 'Open Imports to prepare this spreadsheet.')); }
       } else Alert.alert('Document uploaded', 'Automatic processing currently supports text-based PDF invoices.');
       if (refreshAfter) await load();
     } catch (e) { Alert.alert('Upload failed', errorMessage(e)); }
@@ -185,6 +218,30 @@ export function FinanceScreen() {
     finally { setDownloadingId(null); }
   }
 
+  async function downloadPayslip(slip: PayrollPayslip) {
+    setDownloadingId(slip.id);
+    const name = `payslip-${slip.employee_code.replace(/[^a-zA-Z0-9_-]/g, '_')}-${slip.period_end}.pdf`;
+    const path = `/finance/payroll/payslips/${encodeURIComponent(slip.id)}/pdf`;
+    try {
+      if (Platform.OS === 'web') {
+        const response = await api.get<Blob>(path, { responseType: 'blob' });
+        const url = URL.createObjectURL(response.data);
+        const link = window.document.createElement('a');
+        link.href = url; link.download = name; link.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        return;
+      }
+      const directory = FileSystem.cacheDirectory;
+      if (!directory) throw new Error('Temporary file storage is unavailable.');
+      const token = await sessionStorage.getItem(secureSession.tokenKey);
+      const result = await FileSystem.downloadAsync(`${API_BASE_URL}${path}`, `${directory}${Date.now()}-${name}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (result.status < 200 || result.status >= 300) throw new Error('Could not download this payslip.');
+      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(result.uri, { dialogTitle: `Save ${name}`, mimeType: 'application/pdf' });
+      else Alert.alert('Downloaded', 'A temporary copy of the payslip was saved.');
+    } catch (e) { Alert.alert('Download failed', errorMessage(e, 'Could not download this payslip.')); }
+    finally { setDownloadingId(null); }
+  }
+
   function deleteDocument(document: FinanceDocument) {
     Alert.alert('Delete this document?', `${document.original_name} and its extracted records will be removed.`, [
       { text: 'Cancel', style: 'cancel' },
@@ -192,10 +249,16 @@ export function FinanceScreen() {
     ]);
   }
 
-  async function setPayment(record: FinanceRecord) {
-    setPaymentId(record.id);
-    const next = record.payment_status === 'paid' ? 'unpaid' : 'paid';
-    try { await api.patch(`/finance/records/${record.id}/payment`, { payment_status: next }); await load(); }
+  async function savePayment() {
+    if (!paymentTarget) return;
+    const amount = Number(paymentDraft);
+    const total = Number(paymentTarget.total_amount);
+    if (!/^\d+(?:\.\d{1,2})?$/.test(paymentDraft.trim()) || !Number.isFinite(amount) || amount > total) {
+      Alert.alert('Check amount', `Enter a total paid amount between 0 and ${formatMoney(total, paymentTarget.currency ?? workspace?.currency ?? 'USD')}, with up to two decimal places.`);
+      return;
+    }
+    setPaymentId(paymentTarget.id);
+    try { await api.patch(`/finance/records/${paymentTarget.id}/payment`, { amount_paid: amount }); setPaymentTarget(null); await load(); }
     catch (e) { Alert.alert('Could not update payment', errorMessage(e)); }
     finally { setPaymentId(null); }
   }
@@ -233,6 +296,10 @@ export function FinanceScreen() {
     setDetailId(null);
     setReminderTarget(record);
     setReminderDraft(record.reminder_date ?? record.due_date ?? localDate());
+    const current = reminders.find((item) => item.source_id === record.id);
+    setReminderTime(current ? new Date(current.scheduled_at).toTimeString().slice(0, 5) : '09:00');
+    setReminderPriority(current?.priority ?? 'low');
+    setReminderCalendar(current?.calendar_enabled ?? true);
   }
 
   async function saveReminder(record: FinanceRecord, date: string | null) {
@@ -242,7 +309,14 @@ export function FinanceScreen() {
     }
     setSavingReminder(true);
     try {
-      await api.patch(`/finance/records/${record.id}/reminder`, { reminder_date: date });
+      const scheduled = date ? new Date(`${date}T${reminderTime}:00`) : null;
+      if (scheduled && (Number.isNaN(scheduled.getTime()) || scheduled <= new Date())) {
+        Alert.alert('Check reminder time', 'Choose a future date and time.');
+        return;
+      }
+      await api.patch(`/finance/records/${record.id}/reminder`, { reminder_date: date, scheduled_at: scheduled?.toISOString() ?? null, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, priority: reminderPriority, calendar_enabled: reminderCalendar });
+      await syncLocalFinanceReminders();
+      if (user) await syncDeviceCalendar(user.id).catch(() => Alert.alert('Reminder saved', 'Calendar sync could not finish. Open Notifications to retry.'));
       setReminderTarget(null);
       await load();
     } catch (e) { Alert.alert('Could not save reminder', errorMessage(e)); }
@@ -259,7 +333,9 @@ export function FinanceScreen() {
       || (recordFilter === 'Invoices' && record.record_type === 'invoice')
       || (recordFilter === 'Bills' && record.record_type === 'expense')
       || (recordFilter === 'Needs review' && record.status === 'needs_review')
+      || (recordFilter === 'Open invoices' && record.status === 'confirmed' && record.record_type === 'invoice' && remainingBalance(record) > 0)
       || (recordFilter === 'Unpaid' && record.status === 'confirmed' && record.payment_status === 'unpaid')
+      || (recordFilter === 'Partial' && record.status === 'confirmed' && record.payment_status === 'partial')
       || (recordFilter === 'Paid' && record.status === 'confirmed' && record.payment_status === 'paid');
     return queryMatches && filterMatches;
   });
@@ -267,8 +343,17 @@ export function FinanceScreen() {
   const income = Number(overview?.total_income ?? 0);
   const expenses = Number(overview?.total_expenses ?? 0);
   const totalActivity = Math.abs(income) + Math.abs(expenses);
+  const overviewType = overview?.focus?.business_type ?? 'general';
+  const heroRows = overviewType === 'retail' ? overview?.focus?.balances.invoices : overviewType === 'corporate' ? overview?.focus?.balances.bills : null;
+  const heroValue = heroRows?.find((row) => row.currency.toUpperCase() === currency.toUpperCase())?.amount ?? 0;
   const closeReview = () => { if (!savingReview) { setReviewTarget(null); setRecordDraft(null); } };
   const showRecords = (filter: RecordFilter = 'All') => { setRecordFilter(filter); setSearch(''); setSection('Records'); };
+  const openAttentionRecord = (id: string) => {
+    const record = records.find((item) => item.id === id);
+    if (!record) { showRecords(); return; }
+    if (record.status === 'needs_review') void reviewRecord(record);
+    else { setSection('Records'); setDetailId(id); }
+  };
 
   if (loading) return <View className="flex-1 items-center justify-center bg-canvas px-8">
     <View className="mb-6 h-20 w-20 items-center justify-center rounded-[28px] border border-lilac/20 bg-lilac/10"><Ionicons name="wallet-outline" size={31} color={colors.lilac} /></View>
@@ -295,18 +380,18 @@ export function FinanceScreen() {
       {error ? <View accessibilityRole="alert" className="mb-5 flex-row items-start gap-3 rounded-2xl border border-rose/20 bg-rose/5 p-4"><Ionicons name="alert-circle-outline" size={19} color={colors.rose} /><Text className="flex-1 font-sans text-[13px] leading-5 text-rose">{error}</Text><Pressable accessibilityRole="button" accessibilityLabel="Refresh finance workspace" onPress={() => void load()} className="p-1"><Ionicons name="refresh" size={19} color={colors.rose} /></Pressable></View> : null}
       {section === 'Overview' ? <>
         <View className="mb-6 flex-row items-center justify-between gap-3">
-          <View className="flex-1"><Eyebrow>Finance workspace</Eyebrow><Heading className="mt-2">{workspace?.business_name ?? 'Your finances'}</Heading><Copy className="mt-1">A little clarity. A better day.</Copy></View>
+          <View className="flex-1"><Eyebrow>Finance workspace</Eyebrow><Heading className="mt-2">{workspace?.business_name ?? 'Your finances'}</Heading><Copy className="mt-1">{workspace?.business_type ? `${workspace.business_type} overview` : 'A little clarity. A better day.'}</Copy></View>
           <IconButton icon="options-outline" label="Edit finance workspace" onPress={() => setEditingSetup(true)} />
         </View>
         <View className="overflow-hidden rounded-[28px] border border-lilac/25">
           <LinearGradient colors={isDark ? ['#2c2243', '#1a1727', '#17141f'] : ['#F0EAFB', '#E8E1F3', '#F7F5FA']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ padding: 22 }}>
-            <View className="flex-row items-center justify-between"><View className="flex-row items-center gap-2"><Ionicons name="wallet-outline" size={17} color={colors.lilac} /><Text className="font-medium text-[13px] text-lilac-bright">Net profit</Text></View><View className="rounded-full border border-lilac/20 bg-lilac/10 px-3 py-1.5"><Text className="font-semibold text-[10px] tracking-[1px] text-lilac-bright">{currency}</Text></View></View>
-            <Text numberOfLines={1} adjustsFontSizeToFit className="mt-5 font-display text-[40px] leading-[48px] tracking-[-1.5px] text-white">{money(overview?.net_profit)}</Text>
-            <Text className="mt-1 font-sans text-[12px] text-lilac-bright/70">From your confirmed finance records</Text>
+            <View className="flex-row items-center justify-between"><View className="flex-row items-center gap-2"><Ionicons name="wallet-outline" size={17} color={colors.lilac} /><Text className="font-medium text-[13px] text-lilac-bright">{overviewType === 'retail' ? 'Open customer balances' : overviewType === 'corporate' ? 'Open supplier obligations' : 'Invoice - bill difference'}</Text></View><View className="rounded-full border border-lilac/20 bg-lilac/10 px-3 py-1.5"><Text className="font-semibold text-[10px] tracking-[1px] text-lilac-bright">{currency}</Text></View></View>
+            <Text numberOfLines={1} adjustsFontSizeToFit className="mt-5 font-display text-[40px] leading-[48px] tracking-[-1.5px] text-white">{money(overviewType === 'general' ? overview?.net_profit : heroValue)}</Text>
+            <Text className="mt-1 font-sans text-[12px] text-lilac-bright/70">{overviewType === 'general' ? 'Confirmed issue-date amounts; not cash or final profit' : 'Confirmed remaining balances in workspace currency; other currencies shown below'}</Text>
             <View className="mt-6 flex-row border-t border-white/10 pt-5">
-              <BalanceMetric label="Income" value={money(income)} icon="arrow-down" color={colors.mint} />
+              <BalanceMetric label="Invoices" value={money(income)} icon="arrow-down" color={colors.mint} />
               <View className="mx-4 w-px bg-white/10" />
-              <BalanceMetric label="Expenses" value={money(expenses)} icon="arrow-up" color={colors.rose} />
+              <BalanceMetric label="Bills" value={money(expenses)} icon="arrow-up" color={colors.rose} />
             </View>
           </LinearGradient>
         </View>
@@ -314,15 +399,20 @@ export function FinanceScreen() {
           <Pressable accessibilityRole="button" onPress={() => void upload()} disabled={uploading} className="min-h-14 flex-1 flex-row items-center justify-center gap-2 rounded-2xl border border-action/60 bg-action active:opacity-80">{uploading ? <ActivityIndicator color={colors.actionForeground} size="small" /> : <Ionicons name="add" size={21} color={colors.actionForeground} />}<Text className="font-bold text-[13px] text-action-foreground">{uploading ? 'Uploading…' : 'Add document'}</Text></Pressable>
           <Pressable accessibilityRole="button" onPress={() => showRecords()} className="min-h-14 flex-1 flex-row items-center justify-center gap-2 rounded-2xl border border-line bg-panel active:bg-raised"><Ionicons name="receipt-outline" size={18} color={colors.lilac} /><Text className="font-semibold text-[13px] text-white">View records</Text></Pressable>
         </View>
+        <FinanceMobileAttention records={records} onOpenRecord={openAttentionRecord} onOpenImport={(id) => { setSelectedImportSource(id); setSection('Imports'); }} onChanged={load} compact />
         <SectionTitle title="On your radar" action="View all" onAction={() => showRecords()} />
         <View className="mb-4 flex-row gap-3">
           <CountMetric title="To review" count={records.filter((r) => r.status === 'needs_review').length} icon="scan-outline" color={colors.amber} onPress={() => showRecords('Needs review')} />
-          <CountMetric title="Outstanding" count={overview?.outstanding_invoices?.length ?? 0} icon="time-outline" color={colors.lilac} onPress={() => showRecords('Unpaid')} />
+          <CountMetric title="Outstanding invoices" count={(overview?.outstanding_invoices?.length ?? 0) + (overview?.overdue_invoices?.length ?? 0)} icon="time-outline" color={colors.lilac} onPress={() => showRecords('Open invoices')} />
         </View>
+        <BusinessFocus focus={overview?.focus} currency={currency} onOpenRecords={(scope) => showRecords(scope)} />
+        {payrollSummary && (payrollSummary.employee_count > 0 || payrollSummary.draft_payslips > 0 || payrollSummary.finalized_unpaid_payslips > 0 || payrollSummary.pending_reimbursements > 0 || payrollSummary.approved_unpaid_reimbursements > 0 || payrollSummary.confirmed_unpaid_taxes > 0 || recentPayslips.length > 0) ? <Card className="mb-4 p-5"><View className="flex-row items-center gap-3"><View className="h-10 w-10 items-center justify-center rounded-xl bg-lilac/15"><Ionicons name="people-outline" size={21} color={colors.lilac} /></View><View className="flex-1"><Text className="font-semibold text-[15px] text-white">Payroll at a glance</Text><Text className="mt-1 font-sans text-[11px] text-muted">{payrollSummary.employee_count} active · {payrollSummary.draft_payslips} draft · {payrollSummary.finalized_unpaid_payslips} unpaid payslips</Text></View></View><View className="mt-4 flex-row items-end justify-between border-t border-line pt-4"><Text className="text-[12px] text-muted">Finalized amount to employees</Text><Text className="font-bold text-[16px] text-white">{formatMoney(payrollSummary.next_payroll_amount, payrollSummary.currency)}</Text></View>{payrollSummary.confirmed_unpaid_taxes > 0 ? <Text className="mt-2 text-[11px] text-amber">{payrollSummary.confirmed_unpaid_taxes} confirmed government tax record(s) marked unpaid. Manage on web.</Text> : null}{recentPayslips.map((slip) => <View key={slip.id} className="mt-3 flex-row items-center gap-3 border-t border-line pt-3"><View className="flex-1"><Text className="font-semibold text-[12px] text-white">{slip.employee_name}</Text><Text className="mt-1 text-[11px] text-muted">{slip.period_end} · {slip.status} · {formatMoney(slip.cash_to_employee, slip.currency)}</Text></View><Pressable accessibilityRole="button" accessibilityLabel={`Save payslip for ${slip.employee_name}`} disabled={downloadingId === slip.id} onPress={() => void downloadPayslip(slip)} className="h-11 w-11 items-center justify-center rounded-xl border border-line">{downloadingId === slip.id ? <ActivityIndicator size="small" color={colors.lilac} /> : <Ionicons name="download-outline" size={19} color={colors.lilac} />}</Pressable></View>)}<Text className="mt-4 font-sans text-[11px] leading-[17px] text-muted">Manage employees, leave, claims, and pay approvals in the web workspace. Zengen does not send payments or file taxes.</Text></Card> : null}
         <View className="gap-3">{attention.slice(0, 4).map((record) => <RecordCard key={record.id} record={record} currency={currency} onOpen={() => setDetailId(record.id)} onReview={() => void reviewRecord(record)} />)}</View>
         {!attention.length ? <FinanceEmpty icon="checkmark-done-outline" title="All clear, for now" body="You're up to date. Records that need a closer look will appear here." compact /> : null}
         {overview?.basis_note ? <View className="mt-5 flex-row items-start gap-2.5 px-1"><Ionicons name="information-circle-outline" size={16} color={colors.muted} /><Text className="flex-1 font-sans text-[12px] leading-[18px] text-muted">{overview.basis_note}</Text></View> : null}
       </> : null}
+      {section === 'Attention' ? <FinanceMobileAttention records={records} onOpenRecord={openAttentionRecord} onOpenImport={(id) => { setSelectedImportSource(id); setSection('Imports'); }} onChanged={load} /> : null}
+      {section === 'Imports' ? <FinanceMobileImports initialSourceId={selectedImportSource} onUpload={() => void upload()} onApplied={load} /> : null}
       {section === 'Files' ? <>
         <SectionHeader eyebrow="Your source of truth" title="Documents" description="Every invoice, bill and receipt. Together." count={documents.length} />
         <Pressable accessibilityRole="button" onPress={() => void upload()} disabled={uploading} className="mt-5 flex-row items-center gap-4 rounded-[24px] border border-dashed border-lilac/35 bg-lilac/5 p-5 active:bg-lilac/10">
@@ -336,7 +426,7 @@ export function FinanceScreen() {
       {section === 'Records' ? <>
         <SectionHeader eyebrow="Money, organized" title="Your records" description="The details behind your business." count={records.length} />
         <View className="mb-4 mt-5 flex-row items-center rounded-2xl border border-line bg-panel px-4"><Ionicons name="search-outline" size={18} color={colors.muted} /><Field accessibilityLabel="Search finance records" placeholder="Search a name or reference" value={search} onChangeText={setSearch} className="flex-1 border-0 bg-transparent px-3" autoCapitalize="none" autoCorrect={false} />{search ? <Pressable accessibilityRole="button" accessibilityLabel="Clear search" onPress={() => setSearch('')} className="min-h-11 min-w-8 items-center justify-center"><Ionicons name="close-circle" size={18} color={colors.muted} /></Pressable> : null}</View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-5 flex-grow-0" contentContainerClassName="gap-2"><ChoiceChips items={['All', 'Invoices', 'Bills', 'Needs review', 'Unpaid', 'Paid']} selected={recordFilter} onSelect={(value) => setRecordFilter(value as RecordFilter)} /></ScrollView>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-5 flex-grow-0" contentContainerClassName="gap-2"><ChoiceChips items={['All', 'Invoices', 'Bills', 'Needs review', 'Open invoices', 'Unpaid', 'Partial', 'Paid']} selected={recordFilter} onSelect={(value) => setRecordFilter(value as RecordFilter)} /></ScrollView>
         <View className="gap-3">{filteredRecords.map((record) => <RecordCard key={record.id} record={record} currency={currency} onOpen={() => setDetailId(record.id)} onReview={() => void reviewRecord(record)} />)}</View>
         {!filteredRecords.length ? <FinanceEmpty icon={records.length ? 'search-outline' : 'receipt-outline'} title={records.length ? 'No matching records' : 'A fresh start for your finances'} body={records.length ? 'Try another name, reference or filter.' : 'Records from your uploaded documents will appear here, ready to review.'} /> : null}
       </> : null}
@@ -350,22 +440,33 @@ export function FinanceScreen() {
       </> : null}
       {section === 'Insights' ? <>
         <SectionHeader eyebrow="Your financial picture" title="A clearer perspective" description="A look at what your records are telling you." />
-        <Card className="mt-5 p-5"><View className="flex-row items-center justify-between"><Text className="font-semibold text-[16px] text-white">Income & expenses</Text><Ionicons name="stats-chart-outline" size={20} color={colors.lilac} /></View><Text className="mt-1 font-sans text-[12px] text-muted">Based on confirmed records</Text><View className="mt-6 gap-5"><AmountBar title="Income" value={money(income)} color={colors.mint} fraction={totalActivity ? Math.abs(income) / totalActivity : 0} /><AmountBar title="Expenses" value={money(expenses)} color={colors.rose} fraction={totalActivity ? Math.abs(expenses) / totalActivity : 0} /></View><View className="mt-6 flex-row items-center justify-between border-t border-line pt-4"><Text className="font-medium text-[13px] text-muted">Net profit</Text><Text className="font-display text-[20px] text-white">{money(overview?.net_profit)}</Text></View></Card>
+        <Card className="mt-5 p-5"><View className="flex-row items-center justify-between"><Text className="font-semibold text-[16px] text-white">Issued invoices & bills</Text><Ionicons name="stats-chart-outline" size={20} color={colors.lilac} /></View><Text className="mt-1 font-sans text-[12px] text-muted">Based on confirmed records by issue date</Text><View className="mt-6 gap-5"><AmountBar title="Customer invoices" value={money(income)} color={colors.mint} fraction={totalActivity ? Math.abs(income) / totalActivity : 0} /><AmountBar title="Supplier bills" value={money(expenses)} color={colors.rose} fraction={totalActivity ? Math.abs(expenses) / totalActivity : 0} /></View><View className="mt-6 flex-row items-center justify-between border-t border-line pt-4"><Text className="font-medium text-[13px] text-muted">Issued amount difference</Text><Text className="font-display text-[20px] text-white">{money(overview?.net_profit)}</Text></View></Card>
         <SectionTitle title="Keep an eye on" />
         <Card className="px-5 py-1"><InsightRow icon="time-outline" title="Overdue invoices" subtitle="Customer payments past their due date" count={overview?.overdue_invoices?.length ?? 0} color={colors.rose} onPress={() => showRecords('Invoices')} /><InsightRow icon="receipt-outline" title="Overdue bills" subtitle="Supplier bills past their due date" count={overview?.overdue_bills?.length ?? 0} color={colors.amber} onPress={() => showRecords('Bills')} /><InsightRow icon="calendar-outline" title="Bills due soon" subtitle="Upcoming payments to keep in view" count={overview?.bills_due_soon?.length ?? 0} color={colors.lilac} onPress={() => showRecords('Bills')} last /></Card>
         {overview?.data_completeness_note || overview?.basis_note ? <View className="mt-5 rounded-2xl border border-line bg-panel p-4"><View className="mb-2 flex-row items-center gap-2"><Ionicons name="information-circle-outline" size={17} color={colors.lilac} /><Text className="font-semibold text-[12px] text-lilac-bright">About this picture</Text></View><Copy className="text-[12px]">{overview?.data_completeness_note ?? overview?.basis_note}</Copy></View> : null}
       </> : null}
     </KeyboardScrollView>
-    <BottomSheet visible={!!detail} onClose={() => setDetailId(null)} title="Record details" subtitle={detail?.reference_number ? `Reference ${detail.reference_number}` : 'The details, all in one place.'}>
+    <BottomSheet visible={!!detail} onClose={() => { setDetailId(null); setPaymentTarget(null); }} title="Record details" subtitle={detail?.reference_number ? `Reference ${detail.reference_number}` : 'The details, all in one place.'}>
       {detail ? <>
         <View className="mb-5 rounded-[24px] border border-line bg-raised/60 p-5"><View className="flex-row items-center justify-between gap-3"><Text className="flex-1 font-semibold text-[16px] text-white">{detail.counterparty ?? 'Name not identified'}</Text><RecordStatus record={detail} /></View><Text className="mt-4 font-display text-[34px] text-white">{formatMoney(detail.total_amount, detail.currency ?? currency)}</Text><Text className="mt-1 font-sans text-[12px] text-muted">{detail.record_type === 'expense' ? 'Supplier bill' : 'Customer invoice'}</Text></View>
         <DetailRow label="Issue date" value={formatDate(detail.issue_date)} /><DetailRow label="Due date" value={formatDate(detail.due_date)} /><DetailRow label="Subtotal" value={formatMoney(detail.subtotal, detail.currency ?? currency)} /><DetailRow label="Tax" value={formatMoney(detail.tax_total, detail.currency ?? currency)} />
+        {detail.status === 'confirmed' && detail.total_amount != null ? <><DetailRow label="Paid to date" value={formatMoney(detail.amount_paid ?? 0, detail.currency ?? currency)} /><DetailRow label="Balance due" value={formatMoney(remainingBalance(detail), detail.currency ?? currency)} /></> : null}
         {detail.reminder_date ? <DetailRow label="Reminder" value={formatDate(detail.reminder_date)} /> : null}
         {detail.review_notes?.length ? <View className="mt-4 rounded-2xl border border-amber/20 bg-amber/5 p-4"><Text className="mb-2 font-semibold text-[13px] text-amber">Review notes</Text>{detail.review_notes.map((note, index) => <Text key={`${index}-${note}`} className="mb-1 font-sans text-[13px] leading-5 text-muted">{note}</Text>)}</View> : null}
         {sourceDocument ? <Pressable accessibilityRole="button" disabled={downloadingId === sourceDocument.id} onPress={() => void downloadDocument(sourceDocument)} className="mt-4 min-h-14 flex-row items-center gap-3 rounded-2xl border border-line p-4"><Ionicons name="document-text-outline" size={20} color={colors.lilac} /><View className="flex-1"><Text className="font-medium text-[11px] text-muted">Source document</Text><Text numberOfLines={1} className="mt-1 font-semibold text-[13px] text-white">{sourceDocument.original_name}</Text></View>{downloadingId === sourceDocument.id ? <ActivityIndicator size="small" color={colors.lilac} /> : <Ionicons name="download-outline" size={19} color={colors.lilac} />}</Pressable> : null}
         {detail.status === 'needs_review' ? <PrimaryButton title="Review extracted values" onPress={() => { setDetailId(null); void reviewRecord(detail); }} className="mt-5" /> : null}
-        {detail.status === 'confirmed' ? <PrimaryButton title={detail.payment_status === 'paid' ? 'Mark as unpaid' : detail.record_type === 'expense' ? 'Mark as paid' : 'Mark payment received'} loading={paymentId === detail.id} onPress={() => void setPayment(detail)} className="mt-5" /> : null}
-        {detail.status === 'confirmed' && detail.record_type === 'expense' && detail.payment_status !== 'paid' ? <Pressable accessibilityRole="button" onPress={() => setReminder(detail)} className="mt-3 min-h-14 flex-row items-center justify-center gap-2 rounded-2xl border border-line"><Ionicons name="notifications-outline" size={18} color={colors.lilac} /><Text className="font-semibold text-[14px] text-lilac-bright">{detail.reminder_date ? 'Edit reminder' : 'Set a reminder'}</Text></Pressable> : null}
+        {detail.status === 'confirmed' && detail.total_amount != null && paymentTarget?.id !== detail.id ? <PrimaryButton title={Number(detail.amount_paid || 0) > 0 ? 'Edit total paid' : 'Record payment'} loading={paymentId === detail.id} onPress={() => { setPaymentTarget(detail); setPaymentDraft(String(detail.amount_paid ?? 0)); }} className="mt-5" /> : null}
+        {paymentTarget?.id === detail.id ? <View className="mt-5 rounded-2xl border border-line bg-raised/50 p-4">
+          <Text className="font-semibold text-[14px] text-white">Record a payment</Text>
+          <Text className="mt-1 font-sans text-[12px] text-muted">Currently paid: {formatMoney(detail.amount_paid ?? 0, detail.currency ?? currency)}</Text>
+          <ReviewField label={`Total paid to date (${detail.currency ?? currency})`} value={paymentDraft} placeholder="0.00" keyboardType="decimal-pad" onChange={setPaymentDraft} />
+          <Text className="mt-2 font-sans text-[12px] leading-[18px] text-muted">Use 0 to clear a payment or the full amount to mark it paid. This updates your workspace only; it does not move money or reconcile a bank statement.</Text>
+          <PrimaryButton title="Save paid amount" loading={paymentId === detail.id} onPress={() => void savePayment()} className="mt-4" />
+          <Pressable accessibilityRole="button" disabled={!!paymentId} onPress={() => setPaymentDraft(String(detail.total_amount))} className="mt-3 min-h-12 items-center justify-center rounded-2xl border border-line"><Text className="font-medium text-[13px] text-lilac-bright">Use full amount</Text></Pressable>
+          <Pressable accessibilityRole="button" disabled={!!paymentId} onPress={() => setPaymentTarget(null)} className="mt-3 min-h-11 items-center justify-center"><Text className="font-medium text-[12px] text-muted">Cancel</Text></Pressable>
+        </View> : null}
+        {detail.status === 'confirmed' && ['expense', 'invoice'].includes(detail.record_type) && detail.payment_status !== 'paid' ? <Pressable accessibilityRole="button" onPress={() => setReminder(detail)} className="mt-3 min-h-14 flex-row items-center justify-center gap-2 rounded-2xl border border-line"><Ionicons name="notifications-outline" size={18} color={colors.lilac} /><Text className="font-semibold text-[14px] text-lilac-bright">{detail.reminder_date ? 'Edit reminder' : 'Set a reminder'}</Text></Pressable> : null}
+        {detail.status === 'confirmed' && detail.record_type === 'invoice' && remainingBalance(detail) > 0 ? <Pressable accessibilityRole="button" onPress={() => { setFollowUpTarget(detail); setDetailId(null); setFollowUpDraft(`Hello,\n\nI’m following up on invoice ${detail.reference_number || 'from our business'} for ${formatMoney(remainingBalance(detail), detail.currency ?? currency)}${detail.due_date ? `, due ${formatDate(detail.due_date)}` : ''}. Could you please share an update on the payment? If you have already paid, please disregard this message.\n\nThank you.`); }} className="mt-3 min-h-14 flex-row items-center justify-center gap-2 rounded-2xl border border-line"><Ionicons name="chatbubble-outline" size={18} color={colors.lilac} /><Text className="font-semibold text-[14px] text-lilac-bright">Draft customer follow-up</Text></Pressable> : null}
       </> : null}
     </BottomSheet>
     <BottomSheet visible={!!reviewTarget && !!recordDraft} onClose={closeReview} title="Make it look right" subtitle="Review extracted values before they count toward your finance totals.">
@@ -386,10 +487,19 @@ export function FinanceScreen() {
         <View className="mb-4 rounded-2xl border border-line bg-raised/50 p-4"><Text className="font-sans text-[13px] text-muted">Bill due <Text className="font-semibold text-white">{formatDate(reminderTarget.due_date)}</Text></Text></View>
         {reminderTarget.due_date && isValidDate(reminderTarget.due_date) ? <View className="mb-2 gap-2">{[7, 3, 1, 0].map((days) => ({ days, date: offsetDate(reminderTarget.due_date!, -days) })).filter(({ date }) => date >= localDate()).map(({ days, date }) => <Pressable key={date} accessibilityRole="radio" accessibilityState={{ checked: reminderDraft === date }} onPress={() => setReminderDraft(date)} className={`min-h-14 flex-row items-center justify-between rounded-2xl border px-4 ${reminderDraft === date ? 'border-lilac/40 bg-lilac/10' : 'border-line bg-panel'}`}><Text className="font-medium text-[13px] text-white">{days ? `${days} day${days === 1 ? '' : 's'} before` : 'On the due date'}</Text><Text className="font-sans text-[12px] text-muted">{formatDate(date)}</Text></Pressable>)}</View> : null}
         <ReviewField label="Reminder date" placeholder="YYYY-MM-DD" value={reminderDraft} onChange={setReminderDraft} />
-        <Copy className="mt-3 text-[12px]">Your reminder preference is saved with this record.</Copy>
+        <ReviewField label="Time (24-hour HH:mm)" placeholder="09:00" value={reminderTime} onChange={setReminderTime} />
+        <Text className="mt-3 font-semibold text-[12px] text-white">Priority</Text>
+        <View className="mt-2 flex-row gap-2">{(['low', 'high'] as const).map((level) => <Pressable key={level} accessibilityRole="radio" accessibilityState={{ checked: reminderPriority === level }} onPress={() => setReminderPriority(level)} className={`flex-1 rounded-xl border px-4 py-3 ${reminderPriority === level ? 'border-lilac/40 bg-lilac/10' : 'border-line bg-panel'}`}><Text className="text-center font-semibold text-[12px] text-white">{level === 'low' ? 'Low · notify' : 'High · urgent'}</Text></Pressable>)}</View>
+        <Pressable accessibilityRole="checkbox" accessibilityState={{ checked: reminderCalendar }} onPress={() => setReminderCalendar((value) => !value)} className="mt-3 min-h-12 flex-row items-center gap-2"><Ionicons name={reminderCalendar ? 'checkbox' : 'square-outline'} size={20} color={colors.lilac} /><Text className="font-medium text-[12px] text-white">Show in finance calendar</Text></Pressable>
+        <Copy className="mt-3 text-[12px]">High priority alerts can be read aloud from Notifications.</Copy>
         <PrimaryButton title="Save reminder" loading={savingReminder} onPress={() => void saveReminder(reminderTarget, reminderDraft.trim())} className="mt-5" />
         {reminderTarget.reminder_date ? <Pressable accessibilityRole="button" disabled={savingReminder} onPress={() => void saveReminder(reminderTarget, null)} className="mt-2 min-h-12 items-center justify-center"><Text className="font-semibold text-[13px] text-rose">Remove reminder</Text></Pressable> : null}
       </> : null}
+    </BottomSheet>
+    <BottomSheet visible={!!followUpTarget} onClose={() => setFollowUpTarget(null)} title="Customer follow-up" subtitle="Review and edit the message before choosing where to send it.">
+      <TextInput multiline value={followUpDraft} onChangeText={setFollowUpDraft} accessibilityLabel="Customer follow-up draft" textAlignVertical="top" className="min-h-44 rounded-2xl border border-line bg-panel p-4 font-sans text-[14px] text-white" />
+      <PrimaryButton title="Share draft" onPress={() => void Share.share({ message: followUpDraft })} className="mt-4" />
+      <Copy className="mt-2 text-[12px]">Nothing is sent until you choose an app and send it yourself.</Copy>
     </BottomSheet>
   </View>;
 }
@@ -402,7 +512,7 @@ function FinanceSetup({ initial, onCancel, onSave, error }: { initial: FinanceWo
   const [files, setFiles] = useState<DocumentPicker.DocumentPickerAsset[]>([]);
   const scrollRef = useRef<ScrollView>(null);
   const [profile, setProfile] = useState<FinanceProfile>({
-    business_name: initial?.business_name ?? '', industry: initial?.industry ?? '', country: initial?.country ?? '',
+    business_name: initial?.business_name ?? '', business_type: initial?.business_type ?? '', industry: initial?.industry ?? '', country: initial?.country ?? '',
     currency: initial?.currency ?? 'USD', size: initial?.size ?? '1–10 people',
     financial_year: initial?.financial_year ?? 'January–December', workflows: initial?.workflows ?? [],
     sources: initial?.sources ?? [], payment_terms: initial?.payment_terms ?? 'Net 30',
@@ -439,6 +549,8 @@ function FinanceSetup({ initial, onCancel, onSave, error }: { initial: FinanceWo
     {step === 0 ? <>
       <Heading className="mt-3">Let's start with{'\n'}your business.</Heading><Copy className="mb-6 mt-3">A few details help your analyst see the bigger picture.</Copy>
       <ReviewField label="Business name" placeholder="The name behind your work" value={profile.business_name} onChange={(v) => update('business_name', v)} />
+      <Text className="mb-3 mt-5 font-medium text-[13px] text-muted">Business type</Text><ChoiceChips items={['Retail', 'Corporate']} selected={profile.business_type} onSelect={(v) => update('business_type', v as FinanceProfile['business_type'])} />
+      <Copy className="mb-5 mt-2 text-[12px]">Retail highlights collections and stock data gaps. Corporate highlights payables, budgets and entity reporting.</Copy>
       <ReviewField label="Industry" placeholder="What does your business do?" value={profile.industry} onChange={(v) => update('industry', v)} />
       <ReviewField label="Country or region" placeholder="Where are you based?" value={profile.country} onChange={(v) => update('country', v)} />
       <Text className="mb-3 mt-6 font-medium text-[13px] text-muted">Operating currency</Text><ChoiceChips items={['USD', 'INR', 'EUR', 'GBP', 'CAD', 'AUD', 'Other']} selected={customCurrency ? 'Other' : profile.currency} onSelect={(v) => { setCustomCurrency(v === 'Other'); update('currency', v === 'Other' ? '' : v); }} />
@@ -509,12 +621,12 @@ function DocumentCard({ document, onDownload, onProcess, onDelete, downloading, 
 
 function RecordCard({ record, currency, onOpen, onReview }: { record: FinanceRecord; currency: string; onOpen: () => void; onReview: () => void }) {
   const expense = record.record_type === 'expense';
-  return <Card className="p-4"><Pressable accessibilityRole="button" accessibilityLabel={`View ${record.counterparty ?? 'record'} details`} onPress={onOpen} className="flex-row items-start gap-3 active:opacity-70"><View className={`h-10 w-10 items-center justify-center rounded-2xl ${expense ? 'bg-rose/10' : 'bg-mint/10'}`}><Ionicons name={expense ? 'arrow-up-outline' : 'arrow-down-outline'} size={20} color={expense ? colors.rose : colors.mint} /></View><View className="min-w-0 flex-1"><Text numberOfLines={1} className="font-semibold text-[14px] text-white">{record.counterparty ?? 'Name not identified'}</Text><Text numberOfLines={1} className="mt-1 font-sans text-[11px] text-muted">{record.reference_number ?? (expense ? 'Supplier bill' : 'Customer invoice')}</Text></View><View className="max-w-[45%] items-end"><Text numberOfLines={1} adjustsFontSizeToFit className="font-semibold text-[15px] text-white">{formatMoney(record.total_amount, record.currency ?? currency)}</Text><Text className="mt-1 font-sans text-[10px] text-muted">{record.due_date ? `Due ${formatDate(record.due_date)}` : expense ? 'Expense' : 'Invoice'}</Text></View></Pressable><View className="mt-4 flex-row items-center justify-between border-t border-line pt-3"><RecordStatus record={record} />{record.status === 'needs_review' ? <SmallAction title="Review" icon="arrow-forward" onPress={onReview} /> : <SmallAction title="Details" icon="chevron-forward" onPress={onOpen} />}</View></Card>;
+  return <Card className="p-4"><Pressable accessibilityRole="button" accessibilityLabel={`View ${record.counterparty ?? 'record'} details`} onPress={onOpen} className="flex-row items-start gap-3 active:opacity-70"><View className={`h-10 w-10 items-center justify-center rounded-2xl ${expense ? 'bg-rose/10' : 'bg-mint/10'}`}><Ionicons name={expense ? 'arrow-up-outline' : 'arrow-down-outline'} size={20} color={expense ? colors.rose : colors.mint} /></View><View className="min-w-0 flex-1"><Text numberOfLines={1} className="font-semibold text-[14px] text-white">{record.counterparty ?? 'Name not identified'}</Text><Text numberOfLines={1} className="mt-1 font-sans text-[11px] text-muted">{record.reference_number ?? (expense ? 'Supplier bill' : 'Customer invoice')}</Text></View><View className="max-w-[45%] items-end"><Text numberOfLines={1} adjustsFontSizeToFit className="font-semibold text-[15px] text-white">{formatMoney(record.total_amount, record.currency ?? currency)}</Text><Text className="mt-1 font-sans text-[10px] text-muted">{record.status === 'confirmed' && record.total_amount != null ? `Balance ${formatMoney(remainingBalance(record), record.currency ?? currency)}` : record.due_date ? `Due ${formatDate(record.due_date)}` : expense ? 'Expense' : 'Invoice'}</Text></View></Pressable><View className="mt-4 flex-row items-center justify-between border-t border-line pt-3"><RecordStatus record={record} />{record.status === 'needs_review' ? <SmallAction title="Review" icon="arrow-forward" onPress={onReview} /> : <SmallAction title="Details" icon="chevron-forward" onPress={onOpen} />}</View></Card>;
 }
 
 function RecordStatus({ record }: { record: FinanceRecord }) {
   const overdue = record.status === 'confirmed' && record.payment_status !== 'paid' && Boolean(record.due_date && record.due_date < localDate());
-  const label = record.status === 'needs_review' ? 'Needs review' : record.status === 'unsupported' ? 'Reference' : record.payment_status === 'paid' ? (record.record_type === 'expense' ? 'Paid' : 'Received') : overdue ? 'Overdue' : 'Unpaid';
+  const label = record.status === 'needs_review' ? 'Needs review' : record.status === 'unsupported' ? 'Reference' : record.payment_status === 'paid' ? (record.record_type === 'expense' ? 'Paid' : 'Received') : overdue ? 'Overdue' : record.payment_status === 'partial' ? 'Partially paid' : 'Unpaid';
   return <StatusPill label={label} tone={record.status === 'needs_review' ? 'amber' : record.payment_status === 'paid' ? 'mint' : overdue ? 'rose' : 'lilac'} />;
 }
 
@@ -543,6 +655,10 @@ function formatMoney(value: number | string | null | undefined, currency: string
   const amount = Number(value ?? 0);
   try { return new Intl.NumberFormat(undefined, { style: 'currency', currency }).format(amount); }
   catch { return `${currency} ${amount.toFixed(2)}`; }
+}
+
+function remainingBalance(record: FinanceRecord): number {
+  return Math.max(0, Number(record.balance_due ?? (Number(record.total_amount || 0) - Number(record.amount_paid || 0))));
 }
 
 function formatDate(value: string | null | undefined) {

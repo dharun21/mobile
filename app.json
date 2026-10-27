@@ -20,7 +20,14 @@
       "expo-secure-store",
       "expo-document-picker",
       "expo-status-bar",
-      "expo-sharing"
+      "expo-sharing",
+      "expo-notifications",
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "Allow Zengen AI to list your calendars and keep your finance reminders in the calendar you choose."
+        }
+      ]
     ]
   }
 }

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import './global.css';
-import { ActivityIndicator, Pressable, StatusBar, Text, View } from 'react-native';
+import { ActivityIndicator, AppState, Platform, Pressable, StatusBar, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFonts } from 'expo-font';
 import { DMSans_400Regular, DMSans_500Medium, DMSans_600SemiBold, DMSans_700Bold } from '@expo-google-fonts/dm-sans';
@@ -27,6 +27,13 @@ import { PricingScreen } from './src/features/pricing/PricingScreen';
 import { AdminUsersScreen } from './src/features/access/AdminUsersScreen';
 import { AITeamScreen } from './src/features/home/AITeamScreen';
 import { sessionStorage } from './src/services/sessionStorage';
+import * as Notifications from 'expo-notifications';
+import { registerFinancePush } from './src/services/pushNotifications';
+import { syncDeviceCalendar } from './src/services/deviceCalendar';
+
+if (Platform.OS !== 'web') Notifications.setNotificationHandler({
+  handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: true, shouldSetBadge: false }),
+});
 
 function AppContent() {
   const { user, loading } = useAuth();
@@ -40,6 +47,17 @@ function AppContent() {
   // v2 discards earlier shortcut state; AI Chat now has its own fixed tab,
   // while a selected specialist uses a separate optional shortcut.
   const pinStorageKey = user ? `zengen.mobile.main-menu.v2.${user.id}` : null;
+
+  useEffect(() => {
+    if (!user?.specialists.includes('finance_analyst') || Platform.OS === 'web') return;
+    void registerFinancePush().catch(() => undefined);
+    void syncDeviceCalendar(user.id).catch(() => undefined);
+    const subscription = Notifications.addNotificationResponseReceivedListener(() => setScreen('notifications'));
+    const foreground = AppState.addEventListener('change', (state) => {
+      if (state === 'active') void syncDeviceCalendar(user.id).catch(() => undefined);
+    });
+    return () => { subscription.remove(); foreground.remove(); };
+  }, [user?.id, user?.specialists]);
 
   useEffect(() => {
     setScreen('home');

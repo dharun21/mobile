@@ -19,13 +19,18 @@ const generalPrompts = [
   { icon: 'list-outline' as const, title: 'Make a simple plan', question: 'Help me turn a goal into a few practical steps.' },
 ];
 const financePrompts = [
-  { icon: 'trending-up-outline' as const, title: 'See the bigger picture', question: 'How is my cash flow looking?' },
+  { icon: 'trending-up-outline' as const, title: 'Check partial payments', question: 'Show my partially paid invoices' },
   { icon: 'receipt-outline' as const, title: 'Stay ahead of invoices', question: 'What invoices are overdue?' },
   { icon: 'pie-chart-outline' as const, title: 'Understand my spending', question: 'Summarize my recent expenses' },
 ];
+const personalFinancePrompts = [
+  { icon: 'pie-chart-outline' as const, title: 'Review personal spending', question: 'Summarize my spending this month' },
+  { icon: 'wallet-outline' as const, title: 'Check my budgets', question: 'Show my budget status' },
+  { icon: 'calendar-outline' as const, title: 'Upcoming personal bills', question: 'What personal bills are coming up?' },
+];
 
 const domainLabels: Record<ChatDomain, string> = {
-  general: 'General', finance_analyst: 'Finance', personal_assistant: 'Personal assistant',
+  general: 'General', finance_analyst: 'Finance', personal_finance: 'Personal finance', personal_assistant: 'Personal assistant',
   hr_executive: 'People & HR', sales_analyst: 'Sales',
 };
 
@@ -53,6 +58,7 @@ export function ChatScreen() {
   const domains: ChatDomain[] = [
     'general',
     ...(user?.specialists.includes('finance_analyst') ? ['finance_analyst' as const] : []),
+    ...(user?.specialists.includes('finance_analyst') ? ['personal_finance' as const] : []),
     ...(user?.specialists.includes('personal_assistant') ? ['personal_assistant' as const] : []),
     ...(user?.specialists.includes('hr_executive') ? ['hr_executive' as const] : []),
     ...(user?.specialists.includes('sales_analyst') ? ['sales_analyst' as const] : []),
@@ -203,7 +209,7 @@ export function ChatScreen() {
   };
 
   const visibleConversations = conversations.filter((item) => item.title.toLocaleLowerCase().includes(historySearch.trim().toLocaleLowerCase()));
-  const prompts = domain === 'finance_analyst' ? financePrompts : generalPrompts;
+  const prompts = domain === 'personal_finance' ? personalFinancePrompts : domain === 'finance_analyst' ? financePrompts : generalPrompts;
 
   return <View className="min-h-0 flex-1">
     <View className="px-5 pb-3 pt-1">
